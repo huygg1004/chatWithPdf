@@ -1,15 +1,75 @@
 "use client";
 
-import { Inbox } from "lucide-react";
+import { uploadToS3 } from "@/lib/s3";
+import { useMutation } from "@tanstack/react-query";
+import { Inbox, Loader2 } from "lucide-react";
 import React from "react";
 import { useDropzone } from "react-dropzone";
+import axios from "axios";
+import { toast } from "react-hot-toast";
+import { useRouter } from "next/navigation";
 
 const FileUpload = () => {
+  const router = useRouter();
+  const [uploading, setUploading] = React.useState(false);
+  const { mutate, isPending } = useMutation({
+    mutationFn: async ({
+      file_key,
+      file_name,
+    }: {
+      file_key: string;
+      file_name: string;
+    }) => {
+      const response = await axios.post("/api/create-chat", {
+        file_key,
+        file_name,
+      });
+
+      return response.data;
+    },
+  });
+
   const { getRootProps, getInputProps } = useDropzone({
-    accept: { "application/pdf": [".pdf"] },
+    accept: {
+      "application/pdf": [".pdf"],
+    },
     maxFiles: 1,
-    onDrop: (acceptedFiles) => {
-      console.log(acceptedFiles);
+    onDrop: async (acceptedFiles) => {
+      const file = acceptedFiles[0];
+      if (file.size > 10 * 1024 * 1024) {
+        // Bigger than 10MB!
+        toast.error("File too large");
+        return;
+      }
+
+      try {
+        // Start uploading to S3
+        setUploading(true);
+        const data = await uploadToS3(file);
+        console.log("meow", data);
+
+        if (!data?.file_key || !data.file_name) {
+          toast.error("Something went wrong");
+          return;
+        }
+
+        // Create chat after S3 upload finishes
+        mutate(data, {
+          onSuccess: ({ chat_id }) => {
+            toast.success("Upload Success!");
+          },
+
+          onError: (err) => {
+            toast.error("Error creating chat");
+            console.error(err);
+          },
+        });
+      } catch (error) {
+        console.log(error);
+      } finally {
+        // S3 upload finished
+        setUploading(false);
+      }
     },
   });
 
@@ -18,12 +78,30 @@ const FileUpload = () => {
       <div
         {...getRootProps({
           className:
-            "border-dashed border-2 rounded-xl cursor-pointer bg-gray-50 py-8 flex flex-col justify-center items-center",
+            "border-dashed border-2 rounded-xl cursor-pointer bg-gray-50 py-8 flex justify-center items-center flex-col",
         })}
       >
         <input {...getInputProps()} />
-        <Inbox className="w-10 h-10 text-blue-500" />
-        <p className="mt-2 text-sm text-slate-400">Drop PDF Here</p>
+
+        {uploading || isPending ? (
+          <>
+            {/* Loading state */}
+            <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
+
+            <p className="mt-2 text-sm text-slate-400">
+              Spilling Tea to GPT...
+            </p>
+          </>
+        ) : (
+          <>
+            {/* Default state */}
+            <Inbox className="w-10 h-10 text-blue-500" />
+
+            <p className="mt-2 text-sm text-slate-400">
+              Drop PDF Here
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
