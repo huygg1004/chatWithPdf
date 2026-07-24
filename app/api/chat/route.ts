@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { chats } from "@/lib/db/schema";
 import { getContext } from "@/lib/context";
+import { saveMessage } from "@/lib/db/messages";
 
 type ChatRequestBody = {
   messages: UIMessage[];
@@ -21,7 +22,6 @@ export async function POST(req: Request) {
     const body = (await req.json()) as ChatRequestBody;
     const { messages, chatId } = body;
 
-    // Basic request validation
     if (!Number.isInteger(chatId)) {
       return Response.json(
         { error: "A valid chatId is required" },
@@ -41,7 +41,6 @@ export async function POST(req: Request) {
       messageCount: messages.length,
     });
 
-    // Find the chat so we know which PDF namespace to query.
     const [chat] = await db
       .select({
         id: chats.id,
@@ -58,7 +57,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find the newest user message from the UI messages.
     const latestUserMessage = [...messages]
       .reverse()
       .find((message) => message.role === "user");
@@ -70,7 +68,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // UIMessage stores text inside its parts array.
     const question = latestUserMessage.parts
       .filter(
         (
@@ -91,10 +88,16 @@ export async function POST(req: Request) {
       );
     }
 
+    await saveMessage({
+      chatId,
+      content: question,
+      role: "user",
+    });
+
+    console.log("User message saved");
     console.log("Latest question:", question);
     console.log("PDF file key:", chat.fileKey);
 
-    // Embed the real user question and retrieve matching PDF chunks.
     const context = await getContext(question, chat.fileKey);
 
     console.log("Retrieved PDF context length:", context.length);
@@ -125,7 +128,51 @@ ${context || "No relevant PDF context was retrieved."}
       messages: modelMessages,
     });
 
-    return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse({
+      originalMessages: messages,
+
+      onFinish: async ({ messages: completedMessages }) => {
+        try {
+          const latestAssistantMessage = [...completedMessages]
+            .reverse()
+            .find((message) => message.role === "assistant");
+
+          if (!latestAssistantMessage) {
+            return;
+          }
+
+          const assistantText = latestAssistantMessage.parts
+            .filter(
+              (
+                part,
+              ): part is Extract<
+                (typeof latestAssistantMessage.parts)[number],
+                { type: "text" }
+              > => part.type === "text",
+            )
+            .map((part) => part.text)
+            .join("\n")
+            .trim();
+
+          if (!assistantText) {
+            return;
+          }
+
+          await saveMessage({
+            chatId,
+            content: assistantText,
+            role: "assistant",
+          });
+
+          console.log("Assistant message saved");
+        } catch (error) {
+          console.error(
+            "Failed to save assistant message:",
+            error,
+          );
+        }
+      },
+    });
   } catch (error) {
     console.error("Chat API error:", error);
 

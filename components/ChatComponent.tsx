@@ -1,49 +1,37 @@
 "use client";
 
 import React from "react";
-import { Input } from "./ui/input";
 import { useChat } from "@ai-sdk/react";
-import { Button } from "./ui/button";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { Send } from "lucide-react";
+
+import { Input } from "./ui/input";
+import { Button } from "./ui/button";
 import MessageList from "./MessageList";
-import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
-import type { UIMessage } from "ai";
-import { DefaultChatTransport } from "ai";
 
 type Props = {
   chatId: number;
+  initialMessages: UIMessage[];
 };
 
-const ChatComponent = ({ chatId }: Props) => {
+const ChatComponent = ({
+  chatId,
+  initialMessages,
+}: Props) => {
   const [input, setInput] = React.useState("");
 
-  const { data, isLoading: isLoadingMessages } = useQuery({
-    queryKey: ["chat", chatId],
-    queryFn: async () => {
-      const response = await axios.post<UIMessage[]>(
-        "/api/get-messages",
-        {
-          chatId,
-        }
-      );
-
-      return response.data;
-    },
-  });
-
   const { messages, sendMessage, status } = useChat({
+    messages: initialMessages,
+
     transport: new DefaultChatTransport({
       api: "/api/chat",
       body: {
         chatId,
       },
     }),
-    messages: data || [],
   });
 
   const isLoading =
-    isLoadingMessages ||
     status === "submitted" ||
     status === "streaming";
 
@@ -59,13 +47,19 @@ const ChatComponent = ({ chatId }: Props) => {
     }
   }, [messages]);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleSubmit = (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
 
-    if (!input.trim()) return;
+    const trimmedInput = input.trim();
+
+    if (!trimmedInput || isLoading) {
+      return;
+    }
 
     sendMessage({
-      text: input,
+      text: trimmedInput,
     });
 
     setInput("");
@@ -76,26 +70,25 @@ const ChatComponent = ({ chatId }: Props) => {
       className="relative max-h-screen overflow-scroll"
       id="message-container"
     >
-      {/* Header */}
-      <div className="sticky top-0 inset-x-0 p-2 bg-white h-fit">
+      <div className="sticky inset-x-0 top-0 h-fit bg-white p-2">
         <h3 className="text-xl font-bold">Chat</h3>
       </div>
 
-      {/* Message List */}
       <MessageList
         messages={messages}
         isLoading={isLoading}
       />
 
-      {/* Input */}
       <form
         onSubmit={handleSubmit}
-        className="sticky bottom-0 inset-x-0 px-2 py-4 bg-white"
+        className="sticky inset-x-0 bottom-0 bg-white px-2 py-4"
       >
         <div className="flex">
           <Input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(event) =>
+              setInput(event.target.value)
+            }
             placeholder="Ask any question..."
             className="w-full"
             disabled={isLoading}
@@ -103,7 +96,7 @@ const ChatComponent = ({ chatId }: Props) => {
 
           <Button
             type="submit"
-            className="bg-blue-600 ml-2"
+            className="ml-2 bg-blue-600"
             disabled={isLoading || !input.trim()}
           >
             <Send className="h-4 w-4" />
