@@ -66,22 +66,24 @@ const ChatComponent = ({
   };
 
   return (
-    <div
-      className="relative max-h-screen overflow-scroll"
-      id="message-container"
-    >
-      <div className="sticky inset-x-0 top-0 h-fit bg-white p-2">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b bg-white p-2">
         <h3 className="text-xl font-bold">Chat</h3>
       </div>
 
-      <MessageList
-        messages={messages}
-        isLoading={isLoading}
-      />
+      <div
+        id="message-container"
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
+        <MessageList
+          messages={messages}
+          isLoading={isLoading}
+        />
+      </div>
 
       <form
         onSubmit={handleSubmit}
-        className="sticky inset-x-0 bottom-0 bg-white px-2 py-4"
+        className="shrink-0 border-t bg-white px-2 py-4"
       >
         <div className="flex">
           <Input
